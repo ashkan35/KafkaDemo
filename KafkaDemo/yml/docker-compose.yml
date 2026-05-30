@@ -2,6 +2,21 @@ networks:
   kafka_network:
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: KafkaDemoPostgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=KafkaDemoDb
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=123
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - kafka_network
+
   kafka-1:
     image: bitnamilegacy/kafka:3.6.1-debian-11-r0
     user: 'root'
@@ -103,3 +118,4 @@ services:
 
 volumes:
   kafka-data:
+  postgres-data:
