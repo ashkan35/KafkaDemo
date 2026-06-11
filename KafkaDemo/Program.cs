@@ -75,11 +75,28 @@ var app = builder.Build();
 app.MapOpenApi();
 app.MapScalarApiReference();
 
-app.MapPost("/UserLoggedIn",async(IProducerAccessor producerAccessor,UserLoggedInEventModel model)=>
+app.MapPost("/UserLoggedIn", async (
+    IProducerAccessor producerAccessor,
+    UserLoggedInEventModel model,
+    ILogger<Program> logger) =>
 {
-    var producer = producerAccessor.GetProducer("demo-producer");
-    await producer.ProduceAsync(model.UserId.ToString(), model);
-    return TypedResults.NoContent();
+    try
+    {
+        var producer = producerAccessor.GetProducer("demo-producer");
+        await producer.ProduceAsync(model.UserId, model);
+        KafkaBenchmarkCounters.IncrementPublished();
+        return Results.Accepted(value: new { Message = "User logged-in event was published to Kafka." });
+    }
+    catch (Exception ex)
+    {
+        KafkaBenchmarkCounters.IncrementPublishFailures();
+        logger.LogError(ex, "Unexpected error while publishing user logged-in event to Kafka.");
+
+        return Results.Problem(
+            title: "Could not publish user logged-in event to Kafka.",
+            detail: ex.Message,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
 });
 
 app.MapPost("/UserLoggedInDirectSave", async (
@@ -212,6 +229,28 @@ app.MapPost("/rabbit-batch-benchmark-reset", () =>
 {
     RabbitBatchBenchmarkCounters.Reset();
     return Results.Ok(new { Message = "RabbitMQ batch benchmark counters were reset." });
+});
+
+app.MapGet("/kafka-benchmark-status", () =>
+{
+    var published = KafkaBenchmarkCounters.Published;
+    var persisted = KafkaBenchmarkCounters.Persisted;
+
+    return Results.Ok(new
+    {
+        published,
+        persisted,
+        remaining = published - persisted,
+        publishFailures = KafkaBenchmarkCounters.PublishFailures,
+        persistFailures = KafkaBenchmarkCounters.PersistFailures,
+        utcNow = DateTime.UtcNow
+    });
+});
+
+app.MapPost("/kafka-benchmark-reset", () =>
+{
+    KafkaBenchmarkCounters.Reset();
+    return Results.Ok(new { Message = "Kafka benchmark counters were reset." });
 });
 app.UseHttpsRedirection();
 var kafkaBus = app.Services.CreateKafkaBus();
