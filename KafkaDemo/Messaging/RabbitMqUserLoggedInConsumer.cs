@@ -36,7 +36,7 @@ public class RabbitMqUserLoggedInConsumer(
 
         await channel.BasicQosAsync(
             prefetchSize: 0,
-            prefetchCount: 50,
+            prefetchCount: 10000,
             global: false,
             cancellationToken: stoppingToken);
 

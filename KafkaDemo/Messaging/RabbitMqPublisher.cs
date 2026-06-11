@@ -14,8 +14,8 @@ public class RabbitMqPublisher : IAsyncDisposable
     private readonly SemaphoreSlim _queueDeclareLock = new(1, 1);
     private readonly SemaphoreSlim _channelSlots;
     private readonly ConcurrentQueue<IChannel> _channels = new();
+    private readonly ConcurrentDictionary<string, bool> _declaredQueues = new();
     private IConnection? _connection;
-    private bool _queueDeclared;
 
     public RabbitMqPublisher(IOptions<RabbitMqOptions> options)
     {
@@ -28,6 +28,19 @@ public class RabbitMqPublisher : IAsyncDisposable
     }
 
     public async Task PublishUserLoggedInAsync(UserLoggedInEventModel model, CancellationToken cancellationToken)
+    {
+        await PublishUserLoggedInAsync(model, _options.QueueName, cancellationToken);
+    }
+
+    public async Task PublishUserLoggedInBatchAsync(UserLoggedInEventModel model, CancellationToken cancellationToken)
+    {
+        await PublishUserLoggedInAsync(model, _options.BatchQueueName, cancellationToken);
+    }
+
+    private async Task PublishUserLoggedInAsync(
+        UserLoggedInEventModel model,
+        string queueName,
+        CancellationToken cancellationToken)
     {
         var channel = await RentChannelAsync(cancellationToken);
         var returnToPool = true;
@@ -43,7 +56,7 @@ public class RabbitMqPublisher : IAsyncDisposable
 
             await channel.BasicPublishAsync(
                 exchange: string.Empty,
-                routingKey: _options.QueueName,
+                routingKey: queueName,
                 mandatory: false,
                 basicProperties: properties,
                 body: body,
@@ -79,7 +92,8 @@ public class RabbitMqPublisher : IAsyncDisposable
 
             var connection = await GetConnectionAsync(cancellationToken);
             var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
-            await EnsureQueueDeclaredAsync(channel, cancellationToken);
+            await EnsureQueueDeclaredAsync(channel, _options.QueueName, cancellationToken);
+            await EnsureQueueDeclaredAsync(channel, _options.BatchQueueName, cancellationToken);
             return channel;
         }
         catch
@@ -126,7 +140,7 @@ public class RabbitMqPublisher : IAsyncDisposable
             }
 
             _connection = await _factory.CreateConnectionAsync(cancellationToken);
-            _queueDeclared = false;
+            _declaredQueues.Clear();
             return _connection;
         }
         finally
@@ -135,9 +149,9 @@ public class RabbitMqPublisher : IAsyncDisposable
         }
     }
 
-    private async Task EnsureQueueDeclaredAsync(IChannel channel, CancellationToken cancellationToken)
+    private async Task EnsureQueueDeclaredAsync(IChannel channel, string queueName, CancellationToken cancellationToken)
     {
-        if (_queueDeclared)
+        if (_declaredQueues.ContainsKey(queueName))
         {
             return;
         }
@@ -145,20 +159,20 @@ public class RabbitMqPublisher : IAsyncDisposable
         await _queueDeclareLock.WaitAsync(cancellationToken);
         try
         {
-            if (_queueDeclared)
+            if (_declaredQueues.ContainsKey(queueName))
             {
                 return;
             }
 
             await channel.QueueDeclareAsync(
-                queue: _options.QueueName,
+                queue: queueName,
                 durable: true,
                 exclusive: false,
                 autoDelete: false,
                 arguments: null,
                 cancellationToken: cancellationToken);
 
-            _queueDeclared = true;
+            _declaredQueues[queueName] = true;
         }
         finally
         {

@@ -17,6 +17,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
 builder.Services.AddSingleton<RabbitMqPublisher>();
 builder.Services.AddHostedService<RabbitMqUserLoggedInConsumer>();
+builder.Services.AddHostedService<RabbitMqUserLoggedInBatchConsumer>();
 
 builder.Services.AddKafka(configurationBuilder =>
     configurationBuilder
@@ -145,6 +146,30 @@ app.MapPost("/UserLoggedInRabbit", async (
     }
 });
 
+app.MapPost("/UserLoggedInRabbitBatch", async (
+    RabbitMqPublisher publisher,
+    UserLoggedInEventModel model,
+    ILogger<Program> logger,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        await publisher.PublishUserLoggedInBatchAsync(model, cancellationToken);
+        RabbitBatchBenchmarkCounters.IncrementPublished();
+        return Results.Accepted(value: new { Message = "User logged-in event was published to RabbitMQ batch queue." });
+    }
+    catch (Exception ex)
+    {
+        RabbitBatchBenchmarkCounters.IncrementPublishFailures();
+        logger.LogError(ex, "Unexpected error while publishing user logged-in event to RabbitMQ batch queue.");
+
+        return Results.Problem(
+            title: "Could not publish user logged-in event to batch queue.",
+            detail: ex.Message,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
+});
+
 app.MapGet("/rabbit-benchmark-status", () =>
 {
     var published = RabbitBenchmarkCounters.Published;
@@ -165,6 +190,28 @@ app.MapPost("/rabbit-benchmark-reset", () =>
 {
     RabbitBenchmarkCounters.Reset();
     return Results.Ok(new { Message = "RabbitMQ benchmark counters were reset." });
+});
+
+app.MapGet("/rabbit-batch-benchmark-status", () =>
+{
+    var published = RabbitBatchBenchmarkCounters.Published;
+    var persisted = RabbitBatchBenchmarkCounters.Persisted;
+
+    return Results.Ok(new
+    {
+        published,
+        persisted,
+        remaining = published - persisted,
+        publishFailures = RabbitBatchBenchmarkCounters.PublishFailures,
+        persistFailures = RabbitBatchBenchmarkCounters.PersistFailures,
+        utcNow = DateTime.UtcNow
+    });
+});
+
+app.MapPost("/rabbit-batch-benchmark-reset", () =>
+{
+    RabbitBatchBenchmarkCounters.Reset();
+    return Results.Ok(new { Message = "RabbitMQ batch benchmark counters were reset." });
 });
 app.UseHttpsRedirection();
 var kafkaBus = app.Services.CreateKafkaBus();
