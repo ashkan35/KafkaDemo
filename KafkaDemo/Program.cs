@@ -1,6 +1,7 @@
 using Confluent.Kafka;
 using KafkaDemo.Data;
 using KafkaDemo.Entities;
+using KafkaDemo.Messaging;
 using KafkaDemo.Models;
 using KafkaFlow;
 using KafkaFlow.Producers;
@@ -12,6 +13,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("KafkaDemoDbConnection")
         ?? throw new InvalidOperationException("Connection string 'KafkaDemoDbConnection' was not found.")));
+
+builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
+builder.Services.AddSingleton<RabbitMqPublisher>();
+builder.Services.AddHostedService<RabbitMqUserLoggedInConsumer>();
 
 builder.Services.AddKafka(configurationBuilder =>
     configurationBuilder
@@ -114,6 +119,52 @@ app.MapPost("/UserLoggedInDirectSave", async (
             detail: ex.Message,
             statusCode: StatusCodes.Status500InternalServerError);
     }
+});
+
+app.MapPost("/UserLoggedInRabbit", async (
+    RabbitMqPublisher publisher,
+    UserLoggedInEventModel model,
+    ILogger<Program> logger,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        await publisher.PublishUserLoggedInAsync(model, cancellationToken);
+        RabbitBenchmarkCounters.IncrementPublished();
+        return Results.Accepted(value: new { Message = "User logged-in event was published to RabbitMQ." });
+    }
+    catch (Exception ex)
+    {
+        RabbitBenchmarkCounters.IncrementPublishFailures();
+        logger.LogError(ex, "Unexpected error while publishing user logged-in event to RabbitMQ.");
+
+        return Results.Problem(
+            title: "Could not publish user logged-in event.",
+            detail: ex.Message,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
+});
+
+app.MapGet("/rabbit-benchmark-status", () =>
+{
+    var published = RabbitBenchmarkCounters.Published;
+    var persisted = RabbitBenchmarkCounters.Persisted;
+
+    return Results.Ok(new
+    {
+        published,
+        persisted,
+        remaining = published - persisted,
+        publishFailures = RabbitBenchmarkCounters.PublishFailures,
+        persistFailures = RabbitBenchmarkCounters.PersistFailures,
+        utcNow = DateTime.UtcNow
+    });
+});
+
+app.MapPost("/rabbit-benchmark-reset", () =>
+{
+    RabbitBenchmarkCounters.Reset();
+    return Results.Ok(new { Message = "RabbitMQ benchmark counters were reset." });
 });
 app.UseHttpsRedirection();
 var kafkaBus = app.Services.CreateKafkaBus();
