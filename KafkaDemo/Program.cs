@@ -76,19 +76,44 @@ app.MapPost("/UserLoggedIn",async(IProducerAccessor producerAccessor,UserLoggedI
     return TypedResults.NoContent();
 });
 
-app.MapPost("/UserLoggedInDirectSave", async (ApplicationDbContext dbContext, UserLoggedInEventModel model) =>
+app.MapPost("/UserLoggedInDirectSave", async (
+    ApplicationDbContext dbContext,
+    UserLoggedInEventModel model,
+    ILogger<Program> logger) =>
 {
-    var userLoggedInEvent = new UserLoggedInEvent
+    try
     {
-        UserId = model.UserId,
-        UserName = model.UserName,
-        LoggedInAt = model.LoggedInAt
-    };
+        var userLoggedInEvent = new UserLoggedInEvent
+        {
+            UserId = model.UserId,
+            UserName = model.UserName,
+            LoggedInAt = model.LoggedInAt,
+            Description = model.Description
+        };
 
-    dbContext.UserLoggedInEvents.Add(userLoggedInEvent);
-    await dbContext.SaveChangesAsync();
+        dbContext.UserLoggedInEvents.Add(userLoggedInEvent);
+        await dbContext.SaveChangesAsync();
 
-    return TypedResults.NoContent();
+        return Results.Ok(new { userLoggedInEvent.Id });
+    }
+    catch (DbUpdateException ex)
+    {
+        logger.LogError(ex, "Database error while saving user logged-in event.");
+
+        return Results.Problem(
+            title: "Could not save user logged-in event.",
+            detail: ex.InnerException?.Message ?? ex.Message,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Unexpected error while saving user logged-in event.");
+
+        return Results.Problem(
+            title: "Could not save user logged-in event.",
+            detail: ex.Message,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
 });
 app.UseHttpsRedirection();
 var kafkaBus = app.Services.CreateKafkaBus();
