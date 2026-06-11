@@ -7,11 +7,13 @@ namespace KafkaDemo.Models;
 
 public class UserLogedInConsumer(
     ILogger<UserLogedInConsumer> logger,
-    ApplicationDbContext dbContext) : IMessageHandler<UserLoggedInEventModel>
+    IServiceScopeFactory serviceScopeFactory) : IMessageHandler<UserLoggedInEventModel>
 {
     public async Task Handle(IMessageContext context, UserLoggedInEventModel message)
     {
-        logger.LogWarning("User with {Id} and {UserName} has logged in at {LoggedInAt}", message.UserId, message.UserName, message.LoggedInAt);
+
+        await using var scope = serviceScopeFactory.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
         dbContext.UserLoggedInEvents.Add(new UserLoggedInEvent
         {
