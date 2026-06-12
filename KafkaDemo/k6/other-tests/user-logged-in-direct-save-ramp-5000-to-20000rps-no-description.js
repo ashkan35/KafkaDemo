@@ -3,30 +3,32 @@ import { check } from 'k6';
 import exec from 'k6/execution';
 import { Counter, Rate } from 'k6/metrics';
 
-const baseUrl = __ENV.BASE_URL || 'https://localhost:7189';
-const rps = Number(__ENV.RPS || 15000);
-const duration = __ENV.DURATION || '2m';
+const baseUrl = __ENV.BASE_URL || 'http://localhost:5192';
 const preAllocatedVus = Number(__ENV.PRE_ALLOCATED_VUS || 3000);
-const maxVus = Number(__ENV.MAX_VUS || 15000);
-const description10kb = 'A'.repeat(10 * 1024);
-const publishedEvents = new Counter('published_events');
-const publishFailures = new Rate('publish_failures');
+const maxVus = Number(__ENV.MAX_VUS || 20000);
+const savedEvents = new Counter('saved_events');
+const saveFailures = new Rate('save_failures');
 
 export const options = {
     insecureSkipTLSVerify: true,
     scenarios: {
-        steadyRabbitBatch15000Rps: {
-            executor: 'constant-arrival-rate',
-            rate: rps,
+        rampDirectSaveNoDescription: {
+            executor: 'ramping-arrival-rate',
+            startRate: 5000,
             timeUnit: '1s',
-            duration,
             preAllocatedVUs: preAllocatedVus,
             maxVUs: maxVus,
+            stages: [
+                { duration: '30s', target: 5000 },
+                { duration: '30s', target: 10000 },
+                { duration: '30s', target: 15000 },
+                { duration: '30s', target: 20000 },
+            ],
         },
     },
     thresholds: {
-        published_events: ['count>0'],
-        publish_failures: ['rate<0.01'],
+        saved_events: ['count>0'],
+        save_failures: ['rate<0.01'],
         http_req_failed: ['rate<0.01'],
         http_req_duration: ['p(95)<1000'],
     },
@@ -40,29 +42,28 @@ export default function () {
         userId: userId.toString(),
         userName: `Ashkan${iteration}`,
         loggedInAt: currentTimestampWithoutTimeZone(),
-        description: description10kb,
     });
 
-    const response = http.post(`${baseUrl}/UserLoggedInRabbitBatch`, payload, {
+    const response = http.post(`${baseUrl}/UserLoggedInDirectSave`, payload, {
         headers: {
             'Content-Type': 'application/json',
         },
         timeout: __ENV.REQUEST_TIMEOUT || '10s',
     });
 
-    const published = check(response, {
-        'published successfully': (res) => res.status === 202,
+    const saved = check(response, {
+        'saved successfully': (res) => res.status === 200 && Boolean(res.json('id')),
     });
 
-    if (!published) {
+    if (!saved) {
         console.error(JSON.stringify({
             status: response.status,
             body: response.body,
         }));
     }
 
-    publishedEvents.add(published ? 1 : 0);
-    publishFailures.add(!published);
+    savedEvents.add(saved ? 1 : 0);
+    saveFailures.add(!saved);
 }
 
 function currentTimestampWithoutTimeZone() {

@@ -3,7 +3,11 @@ import { check } from 'k6';
 import exec from 'k6/execution';
 import { Counter, Rate } from 'k6/metrics';
 
-const baseUrl = __ENV.BASE_URL || 'https://localhost:7189';
+const baseUrl = __ENV.BASE_URL || 'http://localhost:5192';
+const warmupRps = Number(__ENV.WARMUP_RPS || 50);
+const warmupDuration = __ENV.WARMUP_DURATION || '10s';
+const bridgeRps = Number(__ENV.BRIDGE_RPS || 7000);
+const bridgeDuration = __ENV.BRIDGE_DURATION || '20s';
 const rps = Number(__ENV.RPS || 10000);
 const duration = __ENV.DURATION || '2m';
 const preAllocatedVus = Number(__ENV.PRE_ALLOCATED_VUS || 2000);
@@ -15,13 +19,18 @@ const publishFailures = new Rate('publish_failures');
 export const options = {
     insecureSkipTLSVerify: true,
     scenarios: {
-        steadyKafka10000Rps: {
-            executor: 'constant-arrival-rate',
-            rate: rps,
+        warmupThenSteadyKafka10000Rps: {
+            executor: 'ramping-arrival-rate',
+            startRate: warmupRps,
             timeUnit: '1s',
-            duration,
             preAllocatedVUs: preAllocatedVus,
             maxVUs: maxVus,
+            stages: [
+                { duration: warmupDuration, target: warmupRps },
+                { duration: bridgeDuration, target: bridgeRps },
+                { duration: '10s', target: rps },
+                { duration, target: rps },
+            ],
         },
     },
     thresholds: {

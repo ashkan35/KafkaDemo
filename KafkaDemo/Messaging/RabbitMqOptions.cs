@@ -12,6 +12,10 @@ public class RabbitMqOptions
 
     public int PublisherChannelPoolSize { get; set; } = 64;
 
+    public int ConsumerCount { get; set; } = 4;
+
+    public ushort PrefetchCount { get; set; } = 1000;
+
     public int BatchSize { get; set; } = 1000;
 
     public int BatchFlushIntervalMs { get; set; } = 1000;

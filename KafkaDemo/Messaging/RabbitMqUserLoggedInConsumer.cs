@@ -24,6 +24,17 @@ public class RabbitMqUserLoggedInConsumer(
         };
 
         await using var connection = await factory.CreateConnectionAsync(stoppingToken);
+
+        var consumerTasks = Enumerable
+            .Range(1, Math.Max(1, _options.ConsumerCount))
+            .Select(consumerNumber => RunConsumerAsync(connection, consumerNumber, stoppingToken))
+            .ToArray();
+
+        await Task.WhenAll(consumerTasks);
+    }
+
+    private async Task RunConsumerAsync(IConnection connection, int consumerNumber, CancellationToken stoppingToken)
+    {
         await using var channel = await connection.CreateChannelAsync(cancellationToken: stoppingToken);
 
         await channel.QueueDeclareAsync(
@@ -36,7 +47,7 @@ public class RabbitMqUserLoggedInConsumer(
 
         await channel.BasicQosAsync(
             prefetchSize: 0,
-            prefetchCount: 10000,
+            prefetchCount: _options.PrefetchCount,
             global: false,
             cancellationToken: stoppingToken);
 
@@ -50,7 +61,7 @@ public class RabbitMqUserLoggedInConsumer(
                 if (model is null)
                 {
                     RabbitBenchmarkCounters.IncrementPersistFailures();
-                    logger.LogWarning("Received empty or invalid user logged-in RabbitMQ message.");
+                    logger.LogWarning("RabbitMQ consumer {ConsumerNumber} received empty or invalid user logged-in message.", consumerNumber);
                     await channel.BasicNackAsync(eventArgs.DeliveryTag, multiple: false, requeue: false, cancellationToken: stoppingToken);
                     return;
                 }
@@ -73,13 +84,13 @@ public class RabbitMqUserLoggedInConsumer(
             catch (DbUpdateException ex)
             {
                 RabbitBenchmarkCounters.IncrementPersistFailures();
-                logger.LogError(ex, "Database error while saving RabbitMQ user logged-in event.");
+                logger.LogError(ex, "RabbitMQ consumer {ConsumerNumber} database error while saving user logged-in event.", consumerNumber);
                 await channel.BasicNackAsync(eventArgs.DeliveryTag, multiple: false, requeue: true, cancellationToken: stoppingToken);
             }
             catch (Exception ex)
             {
                 RabbitBenchmarkCounters.IncrementPersistFailures();
-                logger.LogError(ex, "Unexpected error while processing RabbitMQ user logged-in event.");
+                logger.LogError(ex, "RabbitMQ consumer {ConsumerNumber} unexpected error while processing user logged-in event.", consumerNumber);
                 await channel.BasicNackAsync(eventArgs.DeliveryTag, multiple: false, requeue: false, cancellationToken: stoppingToken);
             }
         };
@@ -89,6 +100,12 @@ public class RabbitMqUserLoggedInConsumer(
             autoAck: false,
             consumer: consumer,
             cancellationToken: stoppingToken);
+
+        logger.LogInformation(
+            "RabbitMQ consumer {ConsumerNumber} started for queue {QueueName} with prefetch {PrefetchCount}.",
+            consumerNumber,
+            _options.QueueName,
+            _options.PrefetchCount);
 
         await Task.Delay(Timeout.Infinite, stoppingToken);
     }
