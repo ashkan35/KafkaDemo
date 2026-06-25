@@ -27,15 +27,15 @@ builder.Services.AddKafka(configurationBuilder =>
             cluster.WithName("DemoCluster");
             cluster.WithBrokers(["localhost:9092", "localhost:9094", "localhost:9096", "localhost:9098", "localhost:9100"]);
  
-            cluster.CreateTopicIfNotExists("demo-topic", 30, 3);
+            cluster.CreateTopicIfNotExists("demo-topic",30, 3);
             cluster.AddConsumer(consumerConfig =>
             {
                 consumerConfig.WithName("DemoConsumer")
                 .WithGroupId("demo-consumer-group")
                 .Topic("demo-topic")
                 .WithAutoCommitIntervalMs(1000)
-                .WithBufferSize(10000)
-                .WithWorkersCount(15)
+                .WithBufferSize(5000)
+                .WithWorkersCount(8)
                 .WithAutoOffsetReset(KafkaFlow.AutoOffsetReset.Earliest)
                 .AddMiddlewares(middlewareConfigurationBuilder =>
                 {

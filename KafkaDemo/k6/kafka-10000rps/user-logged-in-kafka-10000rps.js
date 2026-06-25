@@ -7,9 +7,9 @@ const baseUrl = __ENV.BASE_URL || 'http://localhost:5192';
 const warmupRps = Number(__ENV.WARMUP_RPS || 50);
 const warmupDuration = __ENV.WARMUP_DURATION || '10s';
 const bridgeRps = Number(__ENV.BRIDGE_RPS || 7000);
-const bridgeDuration = __ENV.BRIDGE_DURATION || '20s';
+const bridgeDuration = __ENV.BRIDGE_DURATION || '10s';
 const rps = Number(__ENV.RPS || 10000);
-const duration = __ENV.DURATION || '2m';
+const duration = __ENV.DURATION || '120s';
 const preAllocatedVus = Number(__ENV.PRE_ALLOCATED_VUS || 2000);
 const maxVus = Number(__ENV.MAX_VUS || 10000);
 const description10kb = 'A'.repeat(10 * 1024);
@@ -19,18 +19,31 @@ const publishFailures = new Rate('publish_failures');
 export const options = {
     insecureSkipTLSVerify: true,
     scenarios: {
-        warmupThenSteadyKafka10000Rps: {
-            executor: 'ramping-arrival-rate',
-            startRate: warmupRps,
+        warmup50Rps: {
+            executor: 'constant-arrival-rate',
+            rate: warmupRps,
             timeUnit: '1s',
+            duration: warmupDuration,
             preAllocatedVUs: preAllocatedVus,
             maxVUs: maxVus,
-            stages: [
-                { duration: warmupDuration, target: warmupRps },
-                { duration: bridgeDuration, target: bridgeRps },
-                { duration: '10s', target: rps },
-                { duration, target: rps },
-            ],
+        },
+        bridge7000Rps: {
+            executor: 'constant-arrival-rate',
+            rate: bridgeRps,
+            timeUnit: '1s',
+            duration: bridgeDuration,
+            startTime: warmupDuration,
+            preAllocatedVUs: preAllocatedVus,
+            maxVUs: maxVus,
+        },
+        steady10000Rps: {
+            executor: 'constant-arrival-rate',
+            rate: rps,
+            timeUnit: '1s',
+            duration,
+            startTime: `${parseInt(warmupDuration) + parseInt(bridgeDuration)}s`,
+            preAllocatedVUs: preAllocatedVus,
+            maxVUs: maxVus,
         },
     },
     thresholds: {

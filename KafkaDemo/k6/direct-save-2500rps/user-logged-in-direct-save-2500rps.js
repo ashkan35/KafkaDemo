@@ -4,8 +4,10 @@ import exec from 'k6/execution';
 import { Counter, Rate } from 'k6/metrics';
 
 const baseUrl = __ENV.BASE_URL || 'http://localhost:5192';
+const warmupRps = Number(__ENV.WARMUP_RPS || 50);
+const warmupDuration = __ENV.WARMUP_DURATION || '10s';
 const rps = Number(__ENV.RPS || 2500);
-const duration = __ENV.DURATION || '2m';
+const duration = __ENV.DURATION || '120s';
 const preAllocatedVus = Number(__ENV.PRE_ALLOCATED_VUS || 500);
 const maxVus = Number(__ENV.MAX_VUS || 10000);
 const description10kb = 'A'.repeat(10 * 1024);
@@ -15,11 +17,20 @@ const saveFailures = new Rate('save_failures');
 export const options = {
     insecureSkipTLSVerify: true,
     scenarios: {
+        warmup50Rps: {
+            executor: 'constant-arrival-rate',
+            rate: warmupRps,
+            timeUnit: '1s',
+            duration: warmupDuration,
+            preAllocatedVUs: preAllocatedVus,
+            maxVUs: maxVus,
+        },
         steady2500Rps: {
             executor: 'constant-arrival-rate',
             rate: rps,
             timeUnit: '1s',
             duration,
+            startTime: warmupDuration,
             preAllocatedVUs: preAllocatedVus,
             maxVUs: maxVus,
         },

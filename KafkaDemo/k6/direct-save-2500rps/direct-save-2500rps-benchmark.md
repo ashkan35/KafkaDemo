@@ -1,6 +1,10 @@
 # Direct Save 2500 RPS Benchmark
 
-This benchmark calls `/UserLoggedInDirectSave` at 2500 requests per second for 2 minutes.
+This benchmark calls `/UserLoggedInDirectSave` with a warmup profile:
+
+- 50 RPS for 10 seconds
+- Ramp to 2500 RPS over 10 seconds
+- Hold 2500 RPS for 2 minutes
 
 The payload includes a 10 KB `description` string so it matches the earlier direct-save benchmark shape.
 
@@ -33,7 +37,7 @@ finally {
 Useful overrides:
 
 ```powershell
-k6 run -e BASE_URL=http://localhost:5192 -e RPS=2500 -e DURATION=2m -e PRE_ALLOCATED_VUS=500 -e MAX_VUS=10000 KafkaDemo\k6\direct-save-2500rps\user-logged-in-direct-save-2500rps.js
+k6 run -e BASE_URL=http://localhost:5192 -e WARMUP_RPS=50 -e WARMUP_DURATION=10s -e RPS=2500 -e DURATION=2m -e PRE_ALLOCATED_VUS=500 -e MAX_VUS=10000 KafkaDemo\k6\direct-save-2500rps\user-logged-in-direct-save-2500rps.js
 ```
 
 Interpretation:

@@ -48,7 +48,7 @@ finally {
 Run from the `KafkaDemo\k6\kafka-10000rps` folder:
 
 ```powershell
-logman start Kafka10000
+logman start DirectSave2500
 
 try {
     Invoke-RestMethod -Method Post http://localhost:5192/kafka-benchmark-reset
@@ -69,7 +69,7 @@ try {
     Write-Host "Drain time: $($drainedAt - $finishTime)"
 }
 finally {
-    logman stop Kafka10000
+    logman stop DirectSave2500
 }
 ```
 
